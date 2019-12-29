@@ -75,9 +75,6 @@ module.exports = function cacheRenderer (nuxt, config) {
     let promise = new Promise(function (resolve, reject) {
       hookResolve = resolve
     })
-    // promise.then(function () {
-    //   hookResolve = hookResolvePlaceholder
-    // })
     return promise
   }
 
@@ -98,10 +95,6 @@ module.exports = function cacheRenderer (nuxt, config) {
       cachedResolve = resolve
       cachedReject = reject
     })
-    // promise.finally(function () {
-    //   cachedResolve = cachedResolvePlaceholder
-    //   cachedReject = cachedRejectPlaceholder
-    // })
     return promise
   }
 
