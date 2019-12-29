@@ -1,5 +1,5 @@
 {
-  "name": "nuxt-ssr-cache",
+  "name": "@zbm1/nuxt-ssr-cache",
   "version": "1.5.2",
   "description": "Cache middleware for nuxt's SSR rendering.",
   "main": "lib/middleware.js",
