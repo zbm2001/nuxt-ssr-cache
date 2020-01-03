@@ -65,44 +65,50 @@ module.exports = function cacheRenderer (nuxt, config) {
   const renderer = nuxt.renderer;
   const renderRoute = renderer.renderRoute.bind(renderer);
 
-  let hookResolve = hookResolvePlaceholder
-
-  function hookResolvePlaceholder () {
-    throw new Error('`hookResolve()` needs to be implemented')
+  const hookName = 'vue-renderer:ssr:context'
+  const hookCaches = {
+    // '0': {
+    //   [hookName]: {
+    //     resolve: resolve
+    //   },
+    //   routeCachedPromise: {
+    //     resolve: resolve,
+    //     reject: reject
+    //   }
+    // }
   }
+  const hookCacheIndexes = []
+  let hookCacheIndex = -1
 
-  function createHookPromise () {
+  function createHookPromise (hookCacheIndex) {
     let promise = new Promise(function (resolve, reject) {
-      hookResolve = resolve
+      hookCaches[hookCacheIndex] = {
+        [hookName]: {
+          resolve
+        }
+      }
     })
     return promise
   }
 
-  let cachedResolve = cachedResolvePlaceholder
-
-  function cachedResolvePlaceholder () {
-    throw new Error('`cachedResolve()` needs to be implemented')
-  }
-
-  let cachedReject = cachedRejectPlaceholder
-
-  function cachedRejectPlaceholder () {
-    throw new Error('`cachedReject()` needs to be implemented')
-  }
-
-  function createCachedPromise () {
+  function createCachedPromise (hookCacheIndex) {
     let promise = new Promise(function (resolve, reject) {
-      cachedResolve = resolve
-      cachedReject = reject
+      hookCaches[hookCacheIndex].routeCachedPromise = {
+        resolve,
+        reject
+      }
     })
     return promise
   }
 
   // SSRRenderer.render @nuxt/vue-renderer/dist/vue-renderer.js
   // 执行到此 hook 时，已获取部分内容 css、js 等
-  nuxt.hook('vue-renderer:ssr:context', function (renderContext) {
+  nuxt.hook(hookName, function (renderContext) {
     // This will be called when vue-renderer ssr Context
     // console.log('renderContext.req.url', renderContext.req.url)
+    const _hookCacheIndex = renderContext[hookName]
+    const hookCache = hookCaches[_hookCacheIndex]
+    const hookCachePromise = hookCache[hookName]
     if (renderContext.redirected) {
       // console.log('renderContext.redirected', renderContext.redirected)
       let redirectedResult = {
@@ -112,13 +118,11 @@ module.exports = function cacheRenderer (nuxt, config) {
         error: null,
         redirected: renderContext.redirected
       }
-      hookResolve(redirectedResult)
-      hookResolve = hookResolvePlaceholder
-      return Promise.reject(renderContext.redirected)
+      hookCachePromise.resolve(redirectedResult);
+      return Promise.reject(renderContext.redirected);
     } else {
-      hookResolve()
-      hookResolve = hookResolvePlaceholder
-      return createCachedPromise()
+      hookCachePromise.resolve();
+      return createCachedPromise(_hookCacheIndex);
     }
   })
 
@@ -129,31 +133,41 @@ module.exports = function cacheRenderer (nuxt, config) {
     const cacheKey = (config.cache.key || defaultCacheKeyBuilder)(route, context);
     if (!cacheKey) return renderRoute(route, context);
 
-    const hookPromise = createHookPromise()
+    let _hookCacheIndex = hookCacheIndexes.pop();
+    context[hookName] = _hookCacheIndex > -1 ? _hookCacheIndex : (_hookCacheIndex = ++hookCacheIndex);
 
-    let renderRoutePromise = renderRoute(route, context).catch(err => err)
+    let hookPromise = createHookPromise(_hookCacheIndex);
+
+    let renderRoutePromise = renderRoute(route, context).catch(err => err);
 
     return hookPromise.then(function (redirectedResult) {
       if (redirectedResult) {
-        return redirectedResult
+        clearHookCache();
+        return redirectedResult;
       }
       return cache.getAsync(cacheKey)
         .then(function (cachedResult) {
+          const hookCache = hookCaches[_hookCacheIndex];
+          const routeCachedPromise = hookCache.routeCachedPromise
           if (cachedResult) {
-            cachedReject(route + ' cached.')
-            cachedReject = cachedRejectPlaceholder
-            cachedResolve = cachedResolvePlaceholder
+            routeCachedPromise.reject(route + ' cached.');
             // renderRoutePromise.then(function (result) { console.log(result.redirected) })
-            renderRoutePromise = null
+            clearHookCache();
             return deserialize(cachedResult);
           }
-          cachedResolve(route + ' not cached.')
-          cachedReject = cachedRejectPlaceholder
-          cachedResolve = cachedResolvePlaceholder
+          routeCachedPromise.resolve(route + ' not cached.');
           return renderSetCache();
         })
         .catch(renderSetCache);
     })
+
+    function clearHookCache () {
+      hookCacheIndexes.push(_hookCacheIndex);
+      delete hookCaches[_hookCacheIndex];
+      delete context[hookName];
+      hookPromise = null;
+      renderRoutePromise = null;
+    }
 
     function renderSetCache () {
       return renderRoutePromise
@@ -161,6 +175,7 @@ module.exports = function cacheRenderer (nuxt, config) {
           if (!result.error) {
             cache.setAsync(cacheKey, serialize(result));
           }
+          clearHookCache();
           return result;
         });
     }
