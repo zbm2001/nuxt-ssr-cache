@@ -119,7 +119,8 @@ module.exports = function cacheRenderer (nuxt, config) {
         redirected: renderContext.redirected
       }
       hookCachePromise.resolve(redirectedResult);
-      // return Promise.reject(renderContext.redirected); // nerver use
+      // if response redirected, block promise forever
+      return new Promise(() => {});
     } else {
       hookCachePromise.resolve();
       return createCachedPromise(_hookCacheIndex);
